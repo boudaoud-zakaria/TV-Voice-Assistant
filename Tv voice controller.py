@@ -1,135 +1,290 @@
 """
-TV Voice Assistant - Live Microphone Mode
-==========================================
-Listens from mic, understands your command, returns the TV code.
+TV Voice Assistant - LG via ESP8266 + KY-005 IR
+================================================
+Python envoie un code court -> ESP8266 -> KY-005 -> TV LG
+
+Install:
+    pip install SpeechRecognition sentence-transformers rapidfuzz pyserial
 
 Run:
-    python tv_voice_mic.py
-    python tv_voice_mic.py --lang fr-FR
-    python tv_voice_mic.py --lang ar-DZ
+    python tv_voice_lg.py
+    python tv_voice_lg.py --lang fr-FR
+    python tv_voice_lg.py --port COM3 --lang fr-FR
 """
 
-import speech_recognition as sr
-from sentence_transformers import SentenceTransformer, util
-from rapidfuzz import fuzz, process
 import argparse
 import sys
+import time
+
+import serial
+import serial.tools.list_ports
+import speech_recognition as sr
+from rapidfuzz import fuzz, process
+from sentence_transformers import SentenceTransformer, util
 
 # ─────────────────────────────────────────────
 #  TV COMMANDS
+#  "code" doit correspondre EXACTEMENT aux
+#  commandes dans le sketch ESP8266
 # ─────────────────────────────────────────────
 TV_COMMANDS = {
-    "open": {
-        "code": "0001",
+    "power": {
+        "code": "p",#p f tv
         "aliases": [
-            "open", "turn on", "power on", "start", "on",
-            "switch on", "wake up", "boot", "launch", "activate",
-            "allumer", "ouvrir", "افتح", "شغّل", "تشغيل",
+            "power", "open", "turn on", "power on", "on", "allumer",
+            "close", "turn off", "power off", "off", "eteindre",
+            "افتح", "أغلق", "تشغيل", "إيقاف",
         ],
-        "description": "Turn ON the TV"
+        "description": "Power ON/OFF"
     },
     "close": {
-        "code": "0002",
+        "code": "p",#p f tv
         "aliases": [
-            "close", "cloths", "clouse", "clothes", "cloze",
-            "turn off", "power off", "shutdown", "off",
-            "switch off", "stop", "quit", "exit", "sleep",
-            "éteindre", "fermer", "أغلق", "إيقاف", "أوقف",
+            "close", "turn off", "power off", "shutdown", "off", "switch off",
+            "stop", "quit", "exit", "sleep", "standby", "turn down", "mute all",
+            "clothes", "cloths", "clouse", "cloze",
+            "éteindre", "fermer", "arrêter", "désactiver", "sommeil", "veille",
+            "أغلق", "إيقاف", "أوقف", "طفّي", "اطفي", "قفّل", "نام",
+            "إطفاء التليفزيون", "قفل الجهاز",
         ],
+        "category": "Power",
         "description": "Turn OFF the TV"
     },
-    "settings": {
-        "code": "0003",
+    "volume up": {
+        "code": "v+",
         "aliases": [
-            "settings", "setting", "options", "preferences",
-            "configure", "configuration", "setup", "menu",
-            "paramètres", "réglages", "الإعدادات", "ضبط", "إعدادات",
+            "volume up", "increase volume", "louder", "turn up",
+            "raise volume", "more sound", "amplify", "plus fort",
+            "augmenter le volume", "ارفع الصوت", "صوت اعلى",
         ],
-        "description": "Open Settings menu"
+        "description": "Volume +"
+    },
+    "volume down": {
+        "code": "v-",
+        "aliases": [
+            "volume down", "decrease volume", "quieter", "turn down",
+            "lower volume", "less sound", "softer", "moins fort",
+            "diminuer le volume", "اخفض الصوت", "صوت اقل",
+        ],
+        "description": "Volume -"
     },
     "mute": {
-        "code": "0004",
+        "code": "m",
         "aliases": [
-            "mute", "muet", "silent", "silence", "quiet",
-            "no sound", "no audio", "shh", "muting",
-            "sourdine", "couper le son", "كتم", "صامت", "أسكت",
+            "mute", "silent", "silence", "quiet", "no sound", "shh",
+            "sourdine", "couper le son", "muet",
+            "كتم", "صامت", "اسكت",
         ],
         "description": "Mute / Unmute"
     },
-    "volume up": {
-        "code": "0005",
-        "aliases": [
-            "volume up", "add volume", "increase volume", "louder",
-            "turn up", "raise volume", "more sound", "higher volume",
-            "sound up", "amplify", "boost volume",
-            "augmenter le volume", "plus fort",
-            "ارفع الصوت", "صوت أعلى", "زيادة الصوت",
-        ],
-        "description": "Increase Volume"
-    },
-    "volume down": {
-        "code": "0006",
-        "aliases": [
-            "volume down", "minus volume", "decrease volume", "quieter",
-            "turn down", "lower volume", "less sound", "reduce volume",
-            "sound down", "softer",
-            "diminuer le volume", "moins fort",
-            "اخفض الصوت", "صوت أقل", "تخفيض الصوت",
-        ],
-        "description": "Decrease Volume"
-    },
-    "channel up": {
-        "code": "0007",
-        "aliases": [
-            "channel up", "next channel", "channel forward", "next",
-            "chaîne suivante", "القناة التالية", "القناة فوق",
-        ],
-        "description": "Next Channel"
-    },
-    "channel down": {
-        "code": "0008",
-        "aliases": [
-            "channel down", "previous channel", "channel back", "back",
-            "chaîne précédente", "القناة السابقة", "القناة تحت",
-        ],
-        "description": "Previous Channel"
-    },
-    "home": {
-        "code": "0009",
-        "aliases": [
-            "home", "home screen", "main menu", "dashboard", "go home",
-            "accueil", "écran principal", "الرئيسية", "الشاشة الرئيسية",
-        ],
-        "description": "Go to Home Screen"
-    },
     "input": {
-        "code": "0010",
+        "code": "input",
         "aliases": [
             "input", "source", "hdmi", "change input", "change source",
-            "entrée", "source d'entrée", "المصدر", "الإدخال",
+            "entree", "المصدر", "الإدخال",
         ],
-        "description": "Switch Input Source"
+        "description": "Source / HDMI"
+    },
+    "channel up": {
+        "code": "c+",
+        "aliases": [
+            "channel up", "next channel", "next",
+            "chaine suivante", "القناة التالية",
+        ],
+        "description": "Chaine +"
+    },
+    "channel down": {
+        "code": "c-",
+        "aliases": [
+            "channel down", "previous channel", "back",
+            "chaine precedente", "القناة السابقة",
+        ],
+        "description": "Chaine -"
+    },
+    "home": {
+        "code": "home",
+        "aliases": [
+            "home", "home screen", "main menu", "go home",
+            "accueil", "ecran principal", "الرئيسية",
+        ],
+        "description": "Home"
+    },
+    "settings": {
+        "code": "settings",
+        "aliases": [
+            "settings", "setting", "options", "menu", "configure",
+            "parametres", "reglages", "الإعدادات", "ضبط",
+        ],
+        "description": "Settings"
+    },
+    "ok": {
+        "code": "ok",
+        "aliases": [
+            "ok", "okay", "confirm", "select", "enter",
+            "valider", "confirmer", "موافق", "تاكيد",
+        ],
+        "description": "OK / Confirmer"
     },
     "play": {
-        "code": "0011",
+        "code": "play",
         "aliases": [
             "play", "resume", "continue", "start playing",
             "jouer", "reprendre", "تشغيل", "استئناف",
         ],
-        "description": "Play / Resume"
+        "description": "Play"
+    },
+    "netflix": {
+        "code": "netflix",
+        "aliases": [
+            "netflix", "netflix app", "open netflix", "start netflix",
+            "netflix", "ouvrir netflix", "lancer netflix",
+            "نيتفليكس", "نتفليكس", "افتح نيتفليكس", "شغل نيتفليكس"
+    ],
+    "description": "Open Netflix"
+    },
+    "youtube": {
+        "code": "yt",
+        "aliases": [
+            "youtube", "youtube app", "open youtube", "start youtube",
+            "youtube", "app youtube", "ouvrir youtube", "lancer youtube",
+            "يوتيوب", "افتح يوتيوب", "شغل يوتيوب"
+    ],
+    "description": "Open YouTube"
     },
     "pause": {
-        "code": "0012",
+        "code": "pause",
         "aliases": [
             "pause", "freeze", "hold", "stop playing", "wait",
-            "pauser", "mettre en pause", "إيقاف مؤقت", "توقف",
+            "pauser", "mettre en pause", "إيقاف مؤقت",
         ],
         "description": "Pause"
+    },
+    "recording": {
+        "code": "recordlist",
+        "aliases": [
+            "record", "recording", "record this", "start recording", "rec",
+            "enregistrer", "enregistrement", "start rec", "recording on",
+            "سجّل", "تسجيل", "ابدأ التسجيل", "بدّا التسجيل",
+        ],
+        "category": "Recording",
+        "description": "Start Recording"
+    },
+    "screenshot": {
+        "code": "0031",
+        "aliases": [
+            "screenshot", "screen capture", "capture", "snap", "take screenshot",
+            "capture d'écran", "prendre screenshot", "snap shot",
+            "صورة الشاشة", "التقط صورة", "خذ صورة",
+        ],
+        "category": "Capture",
+        "description": "Take Screenshot"
+    },
+    "guide": {
+        "code": "guide",
+        "aliases": [
+            "guide", "tv guide", "program guide", "what's on", "schedule",
+            "guide tv", "guide des programmes", "horaire", "ce qui passe",
+            "الدليل", "دليل البرامج", "البرامج", "الجدول",
+        ],
+        "category": "Navigation",
+        "description": "Open TV Guide"
+    },
+    "search": {
+        "code": "search",
+        "aliases": [
+            "search", "find", "look for", "search for", "hunt",
+            "chercher", "rechercher", "trouver", "find",
+            "ابحث", "البحث", "لقّي", "شوف",
+        ],
+        "category": "Navigation",
+        "description": "Open Search"
     },
 }
 
 # ─────────────────────────────────────────────
-#  BUILD ALIAS MAP
+#  SERIAL MANAGER
+# ─────────────────────────────────────────────
+class SerialManager:
+    def __init__(self, port=None, baudrate=115200):
+        self.port = port
+        self.baudrate = baudrate
+        self.ser = None
+
+    def auto_detect_port(self):
+        ports = list(serial.tools.list_ports.comports())
+        if not ports:
+            return None
+        for p in ports:
+            desc = (p.description or "").lower()
+            if any(k in desc for k in ("usb", "uart", "ch340", "cp210", "ftdi", "esp", "wemos", "nodemcu")):
+                return p.device
+        return ports[0].device
+
+    def connect(self):
+        if self.port is None:
+            self.port = self.auto_detect_port()
+            if self.port is None:
+                print("[Serial] Aucun ESP8266 trouve - mode simulation.")
+                return False
+            print(f"[Serial] ESP8266 detecte : {self.port}")
+
+        try:
+            self.ser = serial.Serial(
+                port=self.port,
+                baudrate=self.baudrate,
+                bytesize=serial.EIGHTBITS,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                timeout=2,
+            )
+            print("[Serial] Attente demarrage ESP8266 (2s)...")
+            time.sleep(2)
+            self.ser.flushInput()
+            print(f"[Serial] Connecte -> {self.port} @ {self.baudrate} baud\n")
+            return True
+        except serial.SerialException as e:
+            print(f"[Serial] Impossible d'ouvrir {self.port} : {e}")
+            self.ser = None
+            return False
+
+    def send_code(self, code: str):
+        """Envoie le code court + newline vers l'ESP8266."""
+        message = f"{code}\n"
+
+        if self.ser is None or not self.ser.is_open:
+            print(f"[Serial] (simulation) -> {message.strip()}")
+            return
+
+        try:
+            self.ser.write(message.encode("utf-8"))
+            self.ser.flush()
+            print(f"[Serial] Envoye -> ESP8266 : '{message.strip()}'")
+
+            # Lire la reponse de l'ESP8266
+            time.sleep(0.05)
+            if self.ser.in_waiting:
+                reply = self.ser.readline().decode("utf-8", errors="ignore").strip()
+                if reply:
+                    print(f"[Serial] ESP8266 : {reply}")
+
+        except serial.SerialException as e:
+            print(f"[Serial] Erreur : {e}")
+
+    def close(self):
+        if self.ser and self.ser.is_open:
+            self.ser.close()
+            print("[Serial] Port ferme.")
+
+    def __enter__(self):
+        self.connect()
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+
+# ─────────────────────────────────────────────
+#  ALIAS MAP + NLP MATCHER
 # ─────────────────────────────────────────────
 def build_alias_map(commands):
     alias_map = {}
@@ -138,29 +293,26 @@ def build_alias_map(commands):
             alias_map[alias.lower()] = cmd_name
     return alias_map
 
-# ─────────────────────────────────────────────
-#  NLP MATCHER
-# ─────────────────────────────────────────────
+
 class TVCommandMatcher:
     def __init__(self, commands):
         self.commands = commands
         self.alias_map = build_alias_map(commands)
         self.all_aliases = list(self.alias_map.keys())
 
-        print("[NLP] Loading semantic model...")
+        print("[NLP] Chargement du modele semantique...")
         self.model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
-        print("[NLP] Encoding aliases...")
+        print("[NLP] Encodage des alias...")
         self.alias_embeddings = self.model.encode(
             self.all_aliases, convert_to_tensor=True, show_progress_bar=False
         )
-        print("[NLP] ✓ Ready!\n")
+        print("[NLP] Pret !\n")
 
     def match(self, spoken_text, fuzzy_threshold=70, semantic_threshold=0.55):
         text = spoken_text.lower().strip()
         result = {"input": spoken_text, "command": None, "code": None,
                   "method": None, "confidence": 0.0, "description": None}
 
-        # 1. Exact / substring
         if text in self.alias_map:
             cmd = self.alias_map[text]
             result.update({"command": cmd, "code": self.commands[cmd]["code"],
@@ -175,7 +327,6 @@ class TVCommandMatcher:
                                "description": self.commands[cmd]["description"]})
                 return result
 
-        # 2. Fuzzy
         best_fuzzy, score, _ = process.extractOne(
             text, self.all_aliases, scorer=fuzz.WRatio)
         if score >= fuzzy_threshold:
@@ -185,7 +336,6 @@ class TVCommandMatcher:
                            "description": self.commands[cmd]["description"]})
             return result
 
-        # 3. Semantic NLP
         query_emb = self.model.encode(text, convert_to_tensor=True)
         scores = util.cos_sim(query_emb, self.alias_embeddings)[0]
         best_idx = int(scores.argmax())
@@ -202,102 +352,108 @@ class TVCommandMatcher:
         result["method"] = "no match"
         return result
 
+
 # ─────────────────────────────────────────────
 #  PRINT HELPERS
 # ─────────────────────────────────────────────
 def print_header():
-    print("\n" + "═"*50)
-    print("   📺  TV VOICE ASSISTANT  🎙️")
-    print("═"*50)
-    print("  Commands  │  Code")
-    print("────────────┼───────")
+    print("\n" + "="*54)
+    print("   LG TV VOICE - ESP8266 + KY-005 (D5)")
+    print("="*54)
+    print(f"  {'Commande':<14} | {'Code':<4} | Description")
+    print("-"*54)
     for name, data in TV_COMMANDS.items():
-        print(f"  {name:<10} │  {data['code']}")
-    print("═"*50)
-    print("  Say a command — Ctrl+C to quit\n")
+        print(f"  {name:<14} | {data['code']:<4} | {data['description']}")
+    print("="*54)
+    print("  Parle une commande - Ctrl+C pour quitter\n")
 
 def print_result(result):
     if result["command"]:
-        print("\n┌─────────────────────────────────┐")
-        print(f"│  🎯  Heard   : {result['input']:<17} │")
-        print(f"│  ✅  Command : {result['command']:<17} │")
-        print(f"│  📟  Code    : {result['code']:<17} │")
-        print(f"│  🔍  Method  : {result['method']:<17} │")
-        print(f"│  📝  Action  : {result['description']:<17} │")
-        print("└─────────────────────────────────┘\n")
+        print("\n+----------------------------------------+")
+        print(f"|  Entendu  : {result['input']:<26} |")
+        print(f"|  Commande : {result['command']:<26} |")
+        print(f"|  Code ESP : '{result['code']}'  {'':<22}|")
+        print(f"|  Methode  : {result['method']:<26} |")
+        print(f"|  Action   : {result['description']:<26} |")
+        print("+----------------------------------------+\n")
     else:
-        print(f"\n  ❌  Could not match: \"{result['input']}\"")
-        print("     Try rephrasing or speak more clearly.\n")
+        print(f"\n  Non reconnu : \"{result['input']}\"")
+        print("  Reformule ou parle plus clairement.\n")
+
 
 # ─────────────────────────────────────────────
-#  MICROPHONE LISTENER
+#  MIC LISTENER
 # ─────────────────────────────────────────────
 def listen_and_recognize(recognizer, language):
-    """Open mic, listen, return transcribed text or None."""
     with sr.Microphone() as source:
-        print("🎙️  Listening... (speak now)")
-        # Calibrate noise for 0.5 seconds
+        print("Ecoute... (parle maintenant)")
         recognizer.adjust_for_ambient_noise(source, duration=0.5)
         try:
             audio = recognizer.listen(source, timeout=8, phrase_time_limit=6)
         except sr.WaitTimeoutError:
-            print("⏱️  Timeout — no speech detected\n")
+            print("Timeout - aucune parole detectee\n")
             return None
 
-    print("⚙️  Processing...")
+    print("Traitement...")
     try:
-        text = recognizer.recognize_google(audio, language=language)
-        return text
+        return recognizer.recognize_google(audio, language=language)
     except sr.UnknownValueError:
-        print("❓  Could not understand — please try again\n")
+        print("Incomprehensible - reessaie\n")
         return None
     except sr.RequestError as e:
-        print(f"🌐  Network error: {e}")
-        print("    Make sure you have internet access for Google STT\n")
+        print(f"Erreur reseau : {e}\n")
         return None
 
-# ─────────────────────────────────────────────
-#  MAIN LOOP
-# ─────────────────────────────────────────────
-def run(language="en-US"):
-    print_header()
 
+# ─────────────────────────────────────────────
+#  MAIN
+# ─────────────────────────────────────────────
+def run(language="fr-FR", serial_port=None, baudrate=115200):
+    print_header()
     matcher = TVCommandMatcher(TV_COMMANDS)
     recognizer = sr.Recognizer()
     recognizer.energy_threshold = 300
     recognizer.dynamic_energy_threshold = True
     recognizer.pause_threshold = 0.8
 
-    print(f"[Info] Language : {language}")
-    print(f"[Info] Mode     : continuous (press Ctrl+C to stop)\n")
+    print(f"[Info] Langue : {language}")
+    print(f"[Info] Baud   : {baudrate}\n")
 
-    while True:
-        try:
-            spoken = listen_and_recognize(recognizer, language)
+    with SerialManager(port=serial_port, baudrate=baudrate) as serial_mgr:
+        while True:
+            try:
+                spoken = listen_and_recognize(recognizer, language)
+                if spoken is None:
+                    continue
 
-            if spoken is None:
-                continue  # go back to listening
+                print(f'Tu as dit : "{spoken}"')
+                result = matcher.match(spoken)
+                print_result(result)
 
-            print(f'🗣️  You said: "{spoken}"')
-            result = matcher.match(spoken)
-            print_result(result)
+                if result["code"]:
+                    serial_mgr.send_code(result["code"])
 
-            # ── Here you can add your actual TV command sender ──
-            # if result["code"]:
-            #     send_to_tv(result["code"])
+            except KeyboardInterrupt:
+                print("\n\nArrete. Au revoir !\n")
+                sys.exit(0)
 
-        except KeyboardInterrupt:
-            print("\n\n[Assistant] Stopped. Goodbye! 👋\n")
-            sys.exit(0)
 
 # ─────────────────────────────────────────────
 #  ENTRY POINT
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="TV Voice Assistant - Mic Mode")
+    parser = argparse.ArgumentParser(description="LG TV Voice - ESP8266 KY-005")
     parser.add_argument(
-        "--lang", default="en-US",
-        help="Speech language: en-US | fr-FR | ar-DZ | ar-SA (default: en-US)"
+        "--lang", default="ar-DZ",
+        help="Langue : en-US | fr-FR | ar-DZ  (defaut: fr-FR)"
+    )
+    parser.add_argument(
+        "--port", default=None,
+        help="Port ESP8266 : COM3 (Windows) | /dev/ttyUSB0 (Linux)"
+    )
+    parser.add_argument(
+        "--baud", type=int, default=115200,
+        help="Baud rate (defaut: 115200)"
     )
     args = parser.parse_args()
-    run(language=args.lang)
+    run(language=args.lang, serial_port=args.port, baudrate=args.baud)
