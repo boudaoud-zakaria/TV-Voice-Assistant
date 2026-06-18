@@ -1,22 +1,25 @@
 """
-TV VOICE ASSISTANT - ENHANCED VERSION
-=====================================
-Real-time voice recording with performance monitoring
-"TV" trigger word detection + command processing
-Multi-language support (English, French, Arabic Algerian Dialect)
+MULTI-DEVICE VOICE ASSISTANT - ENHANCED VERSION
+================================================
+Real-time voice control for MULTIPLE devices with performance monitoring.
+
+Command format:   <device name> + <command>
+  • "tv  <command>"    → controls the TV          → returns "11" + command code
+  • "clem <command>"   → controls Air Conditioner → returns "00" + command code
+
+Supported languages: English + Arabic (Algerian Darija)
 
 Features:
-  • Voice activation ("TV" trigger)
+  • Device-name activation (TV / Air Conditioner "clem")
+  • Per-device command databases & output prefixes
   • Performance metrics (recording time, processing time)
-  • Semantic NLP matching
-  • Arabic Dariha (Algerian dialect) support
-  • Extensive TV command database
+  • Semantic NLP matching (multilingual)
+  • Arabic Darija (Algerian dialect) support
   • Real-time monitoring
 
 Usage:
     python tv_voice_assistant_enhanced.py --lang en-US
     python tv_voice_assistant_enhanced.py --lang ar-DZ
-    python tv_voice_assistant_enhanced.py --lang fr-FR
     python tv_voice_assistant_enhanced.py --performance
 """
 
@@ -39,24 +42,24 @@ class PerformanceTracker:
         self.session_start = time.time()
         self.command_count = 0
         self.matched_count = 0
-        
+
     def record_audio_time(self, duration):
         self.metrics["audio_recording_time"].append(duration)
-    
+
     def record_processing_time(self, duration):
         self.metrics["processing_time"].append(duration)
-    
+
     def record_stt_time(self, duration):
         self.metrics["speech_to_text_time"].append(duration)
-    
+
     def record_matching_time(self, duration):
         self.metrics["matching_time"].append(duration)
-    
+
     def command_attempted(self, matched=True):
         self.command_count += 1
         if matched:
             self.matched_count += 1
-    
+
     def get_stats(self):
         total_time = time.time() - self.session_start
         stats = {
@@ -70,13 +73,13 @@ class PerformanceTracker:
             "avg_total_time": self._avg("processing_time"),
         }
         return stats
-    
+
     def _avg(self, key):
         values = self.metrics[key]
         return sum(values) / len(values) if values else 0
 
 # ─────────────────────────────────────────────
-#  TV COMMANDS DATABASE
+#  TV COMMANDS DATABASE  (output prefix = "11")
 # ─────────────────────────────────────────────
 TV_COMMANDS = {
     # Power Controls
@@ -85,9 +88,8 @@ TV_COMMANDS = {
         "aliases": [
             "open", "turn on", "power on", "start", "on", "switch on", "wake up",
             "boot", "launch", "activate", "begin", "fire it up", "wake", "go",
-            "allumer", "ouvrir", "démarrer", "mettre en marche", "brancher",
             "افتح", "شغّل", "تشغيل", "دوّر", "ولّع", "اضغط", "شمّع",
-            "فتح الجهاز", "شغيل التليفزيون",
+            "فتح الجهاز", "شغيل التليفزيون", "حل التلفزيون",
         ],
         "category": "Power",
         "description": "Turn ON the TV"
@@ -98,23 +100,20 @@ TV_COMMANDS = {
             "close", "turn off", "power off", "shutdown", "off", "switch off",
             "stop", "quit", "exit", "sleep", "standby", "turn down", "mute all",
             "clothes", "cloths", "clouse", "cloze",
-            "éteindre", "fermer", "arrêter", "désactiver", "sommeil", "veille",
             "أغلق", "إيقاف", "أوقف", "طفّي", "اطفي", "قفّل", "نام",
-            "إطفاء التليفزيون", "قفل الجهاز",
+            "إطفاء التليفزيون", "قفل الجهاز", "حبس التلفزيون",
         ],
         "category": "Power",
         "description": "Turn OFF the TV"
     },
-    
+
     # Volume Controls
     "mute": {
         "code": "0004",
         "aliases": [
             "mute", "silent", "silence", "quiet", "no sound", "no audio",
             "shh", "muting", "silence please", "be quiet", "sound off",
-            "mute", "mute", "mute",
-            "sourdine", "couper le son", "silencieux", "sans son", "tranquille",
-            "كتم", "صامت", "أسكت", "اسكت الصوت", "سكوت", "قطع الصوت",
+            "كتم", "صامت", "أسكت", "اسكت الصوت", "سكوت", "قطع الصوت", "حبس الصوت",
         ],
         "category": "Volume",
         "description": "Mute / Unmute"
@@ -125,9 +124,7 @@ TV_COMMANDS = {
             "volume up", "add volume", "increase volume", "louder", "turn up",
             "raise volume", "more sound", "higher volume", "sound up", "amplify",
             "boost volume", "stronger", "louder please", "crank it up",
-            "volume up", "volume up", "volume up", "volume up",
-            "augmenter le volume", "plus fort", "augmenter", "monter le son",
-            "ارفع الصوت", "صوت أعلى", "زيادة الصوت", "أرفع", "أعلى شوي",
+            "ارفع الصوت", "صوت أعلى", "زيادة الصوت", "أرفع", "أعلى شوي", "زيد الصوت",
         ],
         "category": "Volume",
         "description": "Increase Volume"
@@ -137,23 +134,19 @@ TV_COMMANDS = {
         "aliases": [
             "volume down", "minus volume", "decrease volume", "quieter", "turn down",
             "lower volume", "less sound", "reduce volume", "sound down", "softer",
-            "diminuer", "less noise", "quiet it down",
-            "diminuer le volume", "moins fort", "baisser le son", "réduire",
-            "اخفض الصوت", "صوت أقل", "تخفيض الصوت", "اخفت", "خفيف",
+            "اخفض الصوت", "صوت أقل", "تخفيض الصوت", "اخفت", "خفيف", "نقّص الصوت",
         ],
         "category": "Volume",
         "description": "Decrease Volume"
     },
-    
+
     # Channel Controls
     "channel up": {
         "code": "0007",
         "aliases": [
             "channel up", "next channel", "channel forward", "next", "advance",
             "channel plus", "skip forward", "go next",
-            "channel up", "channel up", "channel up",
-            "chaîne suivante", "chaîne suivante", "forward", "avancer",
-            "القناة التالية", "القناة فوق", "الزر التالي", "زين",
+            "القناة التالية", "القناة فوق", "الزر التالي", "زين", "القناة اللي بعد",
         ],
         "category": "Channel",
         "description": "Next Channel"
@@ -163,20 +156,18 @@ TV_COMMANDS = {
         "aliases": [
             "channel down", "previous channel", "channel back", "back", "reverse",
             "channel minus", "skip back", "go back", "prior",
-            "chaîne précédente", "chaîne précédente", "backward", "reculer",
-            "القناة السابقة", "القناة تحت", "الزر السابق", "راجع",
+            "القناة السابقة", "القناة تحت", "الزر السابق", "راجع", "القناة اللي قبل",
         ],
         "category": "Channel",
         "description": "Previous Channel"
     },
-    
+
     # Navigation
     "home": {
         "code": "0009",
         "aliases": [
             "home", "home screen", "main menu", "dashboard", "go home",
             "menu", "main", "start page", "homepage",
-            "accueil", "écran principal", "menu principal", "page d'accueil",
             "الرئيسية", "الشاشة الرئيسية", "القائمة الرئيسية", "بيت",
         ],
         "category": "Navigation",
@@ -187,8 +178,7 @@ TV_COMMANDS = {
         "aliases": [
             "input", "source", "hdmi", "change input", "change source",
             "switch input", "external", "input source",
-            "entrée", "source d'entrée", "changer d'entrée", "externe",
-            "المصدر", "الإدخال", "الموجة", "الكابل",
+            "المصدر", "الإدخال", "الموجة", "الكابل", "بدّل المصدر",
         ],
         "category": "Navigation",
         "description": "Switch Input Source"
@@ -197,22 +187,19 @@ TV_COMMANDS = {
         "code": "0003",
         "aliases": [
             "settings", "setting", "options", "preferences", "configure",
-            "configuration", "setup", "menu", "adjust", "customize",
-            "settings", "settings", "settings",
-            "paramètres", "réglages", "options", "préférences", "configurer",
+            "configuration", "setup", "adjust", "customize",
             "الإعدادات", "ضبط", "إعدادات", "التوازنات", "التفضيلات",
         ],
         "category": "Navigation",
         "description": "Open Settings Menu"
     },
-    
+
     # Playback Controls
     "play": {
         "code": "0011",
         "aliases": [
             "play", "resume", "continue", "start playing", "press play",
-            "begin", "go", "let's go", "play now",
-            "jouer", "reprendre", "continuer", "démarrer", "lancer",
+            "let's go", "play now",
             "تشغيل", "استئناف", "ابدأ", "اضغط التشغيل", "شغل الفيديو",
         ],
         "category": "Playback",
@@ -221,9 +208,8 @@ TV_COMMANDS = {
     "pause": {
         "code": "0012",
         "aliases": [
-            "pause", "freeze", "hold", "stop playing", "wait", "stop",
+            "pause", "freeze", "hold", "stop playing", "wait",
             "pause it", "hold on", "suspend",
-            "pauser", "mettre en pause", "arrêter", "suspendre", "attendre",
             "إيقاف مؤقت", "توقف", "انتظر", "قف", "جمّد",
         ],
         "category": "Playback",
@@ -233,7 +219,6 @@ TV_COMMANDS = {
         "code": "0013",
         "aliases": [
             "stop", "cease", "end", "finish", "cut", "exit playback",
-            "arrêter", "cesser", "terminer", "finir", "quitter",
             "إيقاف", "توقف نهائي", "انهي", "خرج", "نهاية",
         ],
         "category": "Playback",
@@ -243,7 +228,6 @@ TV_COMMANDS = {
         "code": "0014",
         "aliases": [
             "rewind", "go back", "backward", "back up", "previous",
-            "rembobiner", "aller arrière", "retourner", "précédent",
             "ارجع", "للخلف", "رجّع", "اللي فات",
         ],
         "category": "Playback",
@@ -253,20 +237,18 @@ TV_COMMANDS = {
         "code": "0015",
         "aliases": [
             "fast forward", "skip forward", "skip", "ahead", "forward",
-            "avance rapide", "avancer", "sauter", "avance", "suivant",
             "ابعد للأمام", "تخطي", "قدّم", "روح لقدام",
         ],
         "category": "Playback",
         "description": "Fast Forward"
     },
-    
+
     # App Controls
     "netflix": {
         "code": "0020",
         "aliases": [
             "netflix", "netflix app", "open netflix", "netflix please",
             "netflix show", "watch netflix",
-            "netflix", "ouvrir netflix", "app netflix", "netflix s'il vous plaît",
             "نيتفليكس", "افتح نيتفليكس", "تطبيق نيتفليكس",
         ],
         "category": "App",
@@ -277,7 +259,6 @@ TV_COMMANDS = {
         "aliases": [
             "youtube", "youtube app", "open youtube", "youtube please",
             "youtube video", "watch youtube", "you tube",
-            "youtube", "ouvrir youtube", "app youtube", "youtube s'il vous plaît",
             "يوتيوب", "افتح يوتيوب", "تطبيق يوتيوب",
         ],
         "category": "App",
@@ -288,19 +269,17 @@ TV_COMMANDS = {
         "aliases": [
             "spotify", "spotify app", "open spotify", "spotify please",
             "listen spotify", "music spotify",
-            "spotify", "ouvrir spotify", "app spotify", "spotify s'il vous plaît",
             "سبوتيفاي", "افتح سبوتيفاي", "تطبيق الموسيقى",
         ],
         "category": "App",
         "description": "Open Spotify"
     },
-    
+
     # Additional Controls
     "recording": {
         "code": "0030",
         "aliases": [
             "record", "recording", "record this", "start recording", "rec",
-            "enregistrer", "enregistrement", "start rec", "recording on",
             "سجّل", "تسجيل", "ابدأ التسجيل", "بدّا التسجيل",
         ],
         "category": "Recording",
@@ -310,7 +289,6 @@ TV_COMMANDS = {
         "code": "0031",
         "aliases": [
             "screenshot", "screen capture", "capture", "snap", "take screenshot",
-            "capture d'écran", "prendre screenshot", "snap shot",
             "صورة الشاشة", "التقط صورة", "خذ صورة",
         ],
         "category": "Capture",
@@ -320,7 +298,6 @@ TV_COMMANDS = {
         "code": "0032",
         "aliases": [
             "guide", "tv guide", "program guide", "what's on", "schedule",
-            "guide tv", "guide des programmes", "horaire", "ce qui passe",
             "الدليل", "دليل البرامج", "البرامج", "الجدول",
         ],
         "category": "Navigation",
@@ -330,11 +307,193 @@ TV_COMMANDS = {
         "code": "0033",
         "aliases": [
             "search", "find", "look for", "search for", "hunt",
-            "chercher", "rechercher", "trouver", "find",
             "ابحث", "البحث", "لقّي", "شوف",
         ],
         "category": "Navigation",
         "description": "Open Search"
+    },
+}
+
+# ─────────────────────────────────────────────
+#  AIR CONDITIONER COMMANDS DATABASE  (output prefix = "00")
+# ─────────────────────────────────────────────
+AC_COMMANDS = {
+    # Power
+    "power on": {
+        "code": "0001",
+        "aliases": [
+            "power on", "turn on", "start", "on", "switch on", "open",
+            "ولّع الكليما", "شعل الكليما", "خدّم الكليما", "حل الكليما",
+            "ولّع", "شعل", "خدّم", "شغّل المكيف", "شغّل",
+        ],
+        "category": "Power",
+        "description": "Turn ON the Air Conditioner"
+    },
+    "power off": {
+        "code": "0002",
+        "aliases": [
+            "power off", "turn off", "off", "switch off", "shutdown", "stop",
+            "طفّي الكليما", "حبس الكليما", "سكّر الكليما", "طفّي", "حبس",
+            "سكّر", "أطفئ المكيف", "وقّف الكليما",
+        ],
+        "category": "Power",
+        "description": "Turn OFF the Air Conditioner"
+    },
+
+    # Temperature
+    "temp up": {
+        "code": "0003",
+        "aliases": [
+            "temperature up", "warmer", "hotter", "increase temperature",
+            "raise temperature", "heat up", "more heat",
+            "زيد السخانة", "زيد الحرارة", "سخّن شوية", "زيد", "رفع الحرارة",
+        ],
+        "category": "Temperature",
+        "description": "Increase Temperature"
+    },
+    "temp down": {
+        "code": "0004",
+        "aliases": [
+            "temperature down", "cooler", "colder", "decrease temperature",
+            "lower temperature", "cool down", "more cold",
+            "نقّص الحرارة", "برّد شوية", "اخفض الحرارة", "نقّص", "خفّض الحرارة",
+        ],
+        "category": "Temperature",
+        "description": "Decrease Temperature"
+    },
+
+    # Modes
+    "cool mode": {
+        "code": "0005",
+        "aliases": [
+            "cool", "cooling", "cool mode", "cold mode", "air cool",
+            "تبريد", "وضع التبريد", "برّد", "كول", "حط تبريد",
+        ],
+        "category": "Mode",
+        "description": "Cooling Mode"
+    },
+    "heat mode": {
+        "code": "0006",
+        "aliases": [
+            "heat", "heating", "heat mode", "warm mode",
+            "تسخين", "وضع التسخين", "سخّن", "حط تسخين", "سخانة",
+        ],
+        "category": "Mode",
+        "description": "Heating Mode"
+    },
+    "fan mode": {
+        "code": "0007",
+        "aliases": [
+            "fan", "fan mode", "ventilation", "ventilate", "air",
+            "مروحة", "فان", "تهوية", "وضع المروحة", "هوا",
+        ],
+        "category": "Mode",
+        "description": "Fan / Ventilation Mode"
+    },
+    "dry mode": {
+        "code": "0008",
+        "aliases": [
+            "dry", "dry mode", "dehumidify", "dehumidifier",
+            "تجفيف", "وضع التجفيف", "نشّف", "إزالة الرطوبة",
+        ],
+        "category": "Mode",
+        "description": "Dry / Dehumidify Mode"
+    },
+    "auto mode": {
+        "code": "0009",
+        "aliases": [
+            "auto", "auto mode", "automatic", "automatic mode",
+            "أوتوماتيك", "تلقائي", "وضع تلقائي", "أوتو",
+        ],
+        "category": "Mode",
+        "description": "Automatic Mode"
+    },
+
+    # Fan speed
+    "fan up": {
+        "code": "0010",
+        "aliases": [
+            "fan up", "faster fan", "increase fan", "fan speed up", "stronger fan",
+            "زيد المروحة", "زيد الهوا", "سرّع المروحة", "قوّي الهوا", "زيد سرعة المروحة",
+        ],
+        "category": "Fan",
+        "description": "Increase Fan Speed"
+    },
+    "fan down": {
+        "code": "0011",
+        "aliases": [
+            "fan down", "slower fan", "decrease fan", "fan speed down", "weaker fan",
+            "نقّص المروحة", "بطّئ المروحة", "نقّص الهوا", "خفّف الهوا", "نقّص سرعة المروحة",
+        ],
+        "category": "Fan",
+        "description": "Decrease Fan Speed"
+    },
+
+    # Swing
+    "swing on": {
+        "code": "0012",
+        "aliases": [
+            "swing", "swing on", "oscillate", "move air", "auto swing",
+            "حرّك الهوا", "سوينغ", "وجّه الهوا", "حرّك", "دوّر الهوا",
+        ],
+        "category": "Swing",
+        "description": "Turn ON Swing"
+    },
+    "swing off": {
+        "code": "0013",
+        "aliases": [
+            "swing off", "stop swing", "no swing", "fix air",
+            "حبس الحركة", "وقّف السوينغ", "ثبّت الهوا", "حبس السوينغ",
+        ],
+        "category": "Swing",
+        "description": "Turn OFF Swing"
+    },
+
+    # Extras
+    "timer": {
+        "code": "0014",
+        "aliases": [
+            "timer", "set timer", "sleep timer", "schedule",
+            "مؤقت", "تايمر", "وقّت", "حط مؤقت",
+        ],
+        "category": "Timer",
+        "description": "Set Timer"
+    },
+    "eco mode": {
+        "code": "0015",
+        "aliases": [
+            "eco", "eco mode", "sleep mode", "energy saving", "save energy",
+            "وضع النوم", "اقتصادي", "إيكو", "وضع توفير الطاقة", "وفّر الطاقة",
+        ],
+        "category": "Mode",
+        "description": "Eco / Sleep Mode"
+    },
+}
+
+# ─────────────────────────────────────────────
+#  DEVICE REGISTRY
+# ─────────────────────────────────────────────
+#  Each device: human name, output prefix, trigger words, command database.
+#  Output sent to hardware = prefix + command code  (e.g. TV open → "11" + "0001").
+DEVICES = {
+    "tv": {
+        "name": "TV",
+        "prefix": "11",
+        "triggers": [
+            "tv", "tee vee", "t v", "tiv", "the tv", "television", "telly",
+            "تي في", "تيفي", "تلفاز", "التلفزيون", "تلفزيون", "تيلي",
+        ],
+        "commands": TV_COMMANDS,
+    },
+    "ac": {
+        "name": "Air Conditioner",
+        "prefix": "00",
+        "triggers": [
+            "clem", "clim", "klim", "klima", "kleem", "la clim", "the ac",
+            "ac", "air conditioner", "air conditioning", "air con",
+            "كليم", "كليما", "الكليما", "المكيف", "مكيف", "تكييف", "المكيّف",
+        ],
+        "commands": AC_COMMANDS,
     },
 }
 
@@ -349,135 +508,151 @@ def build_alias_map(commands):
     return alias_map
 
 # ─────────────────────────────────────────────
-#  TV COMMAND MATCHER
+#  DEVICE COMMAND MATCHER  (one per device, shares the NLP model)
 # ─────────────────────────────────────────────
-class TVCommandMatcher:
-    def __init__(self, commands, show_progress=False):
-        self.commands = commands
-        self.alias_map = build_alias_map(commands)
+class DeviceCommandMatcher:
+    def __init__(self, device_key, device, model, show_progress=False):
+        self.device_key = device_key
+        self.name = device["name"]
+        self.prefix = device["prefix"]
+        self.commands = device["commands"]
+        self.model = model
+        self.alias_map = build_alias_map(self.commands)
         self.all_aliases = list(self.alias_map.keys())
-        self.show_progress = show_progress
-        
-        print("[NLP] Loading semantic model...")
-        self.model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
-        
-        print("[NLP] Encoding aliases...")
+
+        print(f"[NLP] Encoding aliases for {self.name}...")
         self.alias_embeddings = self.model.encode(
-            self.all_aliases, 
-            convert_to_tensor=True, 
+            self.all_aliases,
+            convert_to_tensor=True,
             show_progress_bar=show_progress
         )
-        print("[NLP] ✓ Model ready!\n")
+
+    def _build_result(self, spoken_text, cmd, method, confidence, match_start):
+        cmd_data = self.commands[cmd]
+        return {
+            "input": spoken_text,
+            "device": self.name,
+            "device_key": self.device_key,
+            "command": cmd,
+            "code": cmd_data["code"],
+            "full_code": self.prefix + cmd_data["code"],
+            "method": method,
+            "confidence": confidence,
+            "description": cmd_data["description"],
+            "category": cmd_data["category"],
+            "processing_time": time.time() - match_start,
+        }
 
     def match(self, spoken_text, fuzzy_threshold=70, semantic_threshold=0.55):
         match_start = time.time()
         text = spoken_text.lower().strip()
-        
-        result = {
-            "input": spoken_text,
-            "command": None,
-            "code": None,
-            "method": None,
-            "confidence": 0.0,
-            "description": None,
-            "category": None,
-            "processing_time": 0
-        }
 
         # 1. Exact match
         if text in self.alias_map:
-            cmd = self.alias_map[text]
-            cmd_data = self.commands[cmd]
-            result.update({
-                "command": cmd,
-                "code": cmd_data["code"],
-                "method": "exact",
-                "confidence": 1.0,
-                "description": cmd_data["description"],
-                "category": cmd_data["category"]
-            })
-            result["processing_time"] = time.time() - match_start
-            return result
+            return self._build_result(spoken_text, self.alias_map[text], "exact", 1.0, match_start)
 
         # 2. Substring match
         for alias, cmd in self.alias_map.items():
             if alias in text or text in alias:
-                cmd_data = self.commands[cmd]
-                result.update({
-                    "command": cmd,
-                    "code": cmd_data["code"],
-                    "method": "substring",
-                    "confidence": 0.95,
-                    "description": cmd_data["description"],
-                    "category": cmd_data["category"]
-                })
-                result["processing_time"] = time.time() - match_start
-                return result
+                return self._build_result(spoken_text, cmd, "substring", 0.95, match_start)
 
         # 3. Fuzzy matching
         best_fuzzy, score, _ = process.extractOne(
             text, self.all_aliases, scorer=fuzz.WRatio
         )
         if score >= fuzzy_threshold:
-            cmd = self.alias_map[best_fuzzy]
-            cmd_data = self.commands[cmd]
-            result.update({
-                "command": cmd,
-                "code": cmd_data["code"],
-                "method": f"fuzzy ({score:.0f}%)",
-                "confidence": score / 100,
-                "description": cmd_data["description"],
-                "category": cmd_data["category"]
-            })
-            result["processing_time"] = time.time() - match_start
-            return result
+            return self._build_result(
+                spoken_text, self.alias_map[best_fuzzy],
+                f"fuzzy ({score:.0f}%)", score / 100, match_start
+            )
 
         # 4. Semantic NLP
         query_emb = self.model.encode(text, convert_to_tensor=True)
         scores = util.cos_sim(query_emb, self.alias_embeddings)[0]
         best_idx = int(scores.argmax())
         best_score = float(scores[best_idx])
-
         if best_score >= semantic_threshold:
-            cmd = self.alias_map[self.all_aliases[best_idx]]
-            cmd_data = self.commands[cmd]
-            result.update({
-                "command": cmd,
-                "code": cmd_data["code"],
-                "method": f"semantic ({best_score:.2f})",
-                "confidence": best_score,
-                "description": cmd_data["description"],
-                "category": cmd_data["category"]
-            })
-            result["processing_time"] = time.time() - match_start
-            return result
+            return self._build_result(
+                spoken_text, self.alias_map[self.all_aliases[best_idx]],
+                f"semantic ({best_score:.2f})", best_score, match_start
+            )
 
-        result["method"] = "no match"
-        result["processing_time"] = time.time() - match_start
-        return result
+        # No match
+        return {
+            "input": spoken_text,
+            "device": self.name,
+            "device_key": self.device_key,
+            "command": None,
+            "code": None,
+            "full_code": None,
+            "method": "no match",
+            "confidence": 0.0,
+            "description": None,
+            "category": None,
+            "processing_time": time.time() - match_start,
+        }
 
-    def detect_trigger(self, spoken_text):
-        """Check if text starts with 'TV' trigger word"""
+# ─────────────────────────────────────────────
+#  MULTI-DEVICE ASSISTANT  (device detection + routing)
+# ─────────────────────────────────────────────
+class MultiDeviceAssistant:
+    def __init__(self, devices, show_progress=False):
+        print("[NLP] Loading semantic model...")
+        self.model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+
+        self.devices = devices
+        self.matchers = {
+            key: DeviceCommandMatcher(key, dev, self.model, show_progress)
+            for key, dev in devices.items()
+        }
+        print("[NLP] ✓ All devices ready!\n")
+
+    def detect_device(self, spoken_text, fuzzy_threshold=80):
+        """Identify which device the command targets.
+
+        Returns (device_key, remainder) where remainder is the command text
+        after the device name, or (None, None) if no device recognized.
+        """
         text = spoken_text.lower().strip()
-        # Check for TV trigger in various forms
-        tv_triggers = ["tv", "tee vee", "t v", "tiv", "tv "]
-        
-        for trigger in tv_triggers:
-            if text.startswith(trigger):
-                # Extract command part after TV
-                remainder = text[len(trigger):].strip()
-                return True, remainder if remainder else None
-        
-        # Also check via fuzzy matching for Arabic, French variants
-        if len(text) > 2:
-            first_word = text.split()[0]
-            tv_variants = ["tv", "tiv", "تي في", "تيفي", "تف"]
-            for variant in tv_variants:
-                if fuzz.ratio(first_word, variant) > 85:
-                    remainder = " ".join(text.split()[1:])
-                    return True, remainder if remainder else None
-        
-        return False, None
+        if not text:
+            return None, None
+
+        # 1. Exact prefix match — longest triggers first (e.g. "air conditioner" before "ac")
+        candidates = []
+        for key, dev in self.devices.items():
+            for trigger in dev["triggers"]:
+                candidates.append((trigger.lower(), key))
+        candidates.sort(key=lambda x: len(x[0]), reverse=True)
+
+        for trigger, key in candidates:
+            if text == trigger:
+                return key, None
+            if text.startswith(trigger + " "):
+                return key, text[len(trigger):].strip()
+
+        # 2. Fuzzy match on the first word (handles STT noise / dialect variants)
+        first_word = text.split()[0]
+        best_key, best_score = None, 0
+        for key, dev in self.devices.items():
+            for trigger in dev["triggers"]:
+                score = fuzz.ratio(first_word, trigger.lower())
+                if score > best_score:
+                    best_score, best_key = score, key
+        if best_score >= fuzzy_threshold:
+            remainder = " ".join(text.split()[1:])
+            return best_key, (remainder if remainder else None)
+
+        return None, None
+
+    def process(self, spoken_text):
+        """Detect device then match the command. Returns (device_key, result)."""
+        device_key, remainder = self.detect_device(spoken_text)
+        if device_key is None:
+            return None, None
+        if not remainder:
+            return device_key, None
+        result = self.matchers[device_key].match(remainder)
+        return device_key, result
 
 # ─────────────────────────────────────────────
 #  MICROPHONE LISTENER
@@ -486,23 +661,23 @@ def listen_and_recognize(recognizer, language, performance_tracker=None):
     """Listen from microphone and return transcribed text"""
     with sr.Microphone() as source:
         print("🎙️  Listening... (speak now)")
-        
+
         recording_start = time.time()
         recognizer.adjust_for_ambient_noise(source, duration=0.5)
-        
+
         try:
             audio = recognizer.listen(source, timeout=8, phrase_time_limit=6)
         except sr.WaitTimeoutError:
             print("⏱️  Timeout — no speech detected\n")
             return None
-        
+
         recording_time = time.time() - recording_start
         if performance_tracker:
             performance_tracker.record_audio_time(recording_time)
 
         print("⚙️  Processing...")
         stt_start = time.time()
-        
+
         try:
             text = recognizer.recognize_google(audio, language=language)
             stt_time = time.time() - stt_start
@@ -522,29 +697,34 @@ def listen_and_recognize(recognizer, language, performance_tracker=None):
 # ─────────────────────────────────────────────
 def print_header():
     print("\n" + "═"*60)
-    print("   📺  TV VOICE ASSISTANT (ENHANCED)  🎙️")
+    print("   🎛️   MULTI-DEVICE VOICE ASSISTANT  🎙️")
     print("═"*60)
-    print("  Say: 'TV' followed by a command")
-    print("  Examples: 'TV open', 'TV volume up', 'TV netflix'")
+    print("  Say: '<device name>' followed by a command")
+    print("  📺  TV  → 'tv open', 'tv volume up', 'tv netflix'")
+    print("  ❄️   AC  → 'clem power on', 'clem cool', 'clem temp up'")
     print("─"*60)
-    print(f"  Total Commands Available: {len(TV_COMMANDS)}")
+    for key, dev in DEVICES.items():
+        print(f"  • {dev['name']:<18} prefix '{dev['prefix']}' · "
+              f"{len(dev['commands'])} commands")
     print("═"*60)
     print("  Press Ctrl+C to quit\n")
 
-def print_result(result, show_performance=False):
-    if result["command"]:
+def print_result(device_name, result, show_performance=False):
+    if result and result["command"]:
         print("\n┌──────────────────────────────────────────┐")
-        print(f"│  🎯  Heard    : {result['input']:<29} │")
-        print(f"│  ✅  Command  : {result['command']:<29} │")
-        print(f"│  📟  Code     : {result['code']:<29} │")
-        print(f"│  🔍  Method   : {result['method']:<29} │")
+        print(f"│  🎯  Heard     : {result['input']:<28} │")
+        print(f"│  🎛️   Device    : {device_name:<28} │")
+        print(f"│  ✅  Command   : {result['command']:<28} │")
+        print(f"│  📟  Code      : {result['code']:<28} │")
+        print(f"│  📤  Output    : {result['full_code']:<28} │")
+        print(f"│  🔍  Method    : {result['method']:<28} │")
         print(f"│  📊  Confidence: {result['confidence']*100:.1f}% {'':<20} │")
-        print(f"│  📝  Action   : {result['description']:<29} │")
+        print(f"│  📝  Action    : {result['description']:<28} │")
         if show_performance:
-            print(f"│  ⏱️  Processing: {result['processing_time']*1000:.2f}ms {'':<17} │")
+            print(f"│  ⏱️   Processing: {result['processing_time']*1000:.2f}ms {'':<16} │")
         print("└──────────────────────────────────────────┘\n")
-    else:
-        print(f"\n  ❌  Could not match: \"{result['input']}\"")
+    elif result:
+        print(f"\n  ❌  [{device_name}] Could not match: \"{result['input']}\"")
         if show_performance:
             print(f"  ⏱️  Processing time: {result['processing_time']*1000:.2f}ms")
         print("     Try rephrasing or speak more clearly.\n")
@@ -564,7 +744,7 @@ def print_performance_stats(performance_tracker):
     print(f"  Avg Matching Time     : {stats['avg_matching_time']*1000:.2f} ms")
     print(f"  Avg Total Processing  : {stats['avg_total_time']*1000:.2f} ms")
     print("═"*60 + "\n")
-    
+
     return stats
 
 # ─────────────────────────────────────────────
@@ -573,79 +753,71 @@ def print_performance_stats(performance_tracker):
 def run(language="en-US", show_performance=False):
     print_header()
 
-    matcher = TVCommandMatcher(TV_COMMANDS, show_progress=False)
+    assistant = MultiDeviceAssistant(DEVICES, show_progress=False)
     recognizer = sr.Recognizer()
     recognizer.energy_threshold = 300
     recognizer.dynamic_energy_threshold = True
     recognizer.pause_threshold = 0.8
-    
+
     performance_tracker = PerformanceTracker() if show_performance else None
-    
+
     lang_names = {
         "en-US": "English (US)",
         "fr-FR": "French",
         "ar-DZ": "Arabic (Algerian Dialect)"
     }
-    
+
     print(f"[Info] Language       : {lang_names.get(language, language)}")
     print(f"[Info] Performance    : {'ON' if show_performance else 'OFF'}")
+    print(f"[Info] Devices        : {', '.join(d['name'] for d in DEVICES.values())}")
     print(f"[Info] Mode           : Continuous (press Ctrl+C to stop)\n")
 
-    triggered = False
-    
     while True:
         try:
             stats_start = time.time()
-            
+
             spoken = listen_and_recognize(recognizer, language, performance_tracker)
 
             if spoken is None:
                 continue
 
             print(f'🗣️  You said: "{spoken}"')
-            
-            # Check for TV trigger word
-            is_triggered, remainder = matcher.detect_trigger(spoken)
-            
-            if is_triggered:
-                print("✅ TV trigger detected!")
-                
-                # If there's a command after TV, process it
-                if remainder:
-                    print(f"📝 Processing command: \"{remainder}\"")
-                    match_start = time.time()
-                    result = matcher.match(remainder)
-                    match_time = time.time() - match_start
-                    if performance_tracker:
-                        performance_tracker.record_matching_time(match_time)
-                    triggered = True
-                else:
-                    print("⏱️  Waiting for command after 'TV'...\n")
-                    triggered = True
-                    continue
-            else:
-                # Try to match even without TV trigger (backwards compatibility)
-                print("⚠️  No 'TV' trigger detected. Attempting direct command match...\n")
-                match_start = time.time()
-                result = matcher.match(spoken)
-                match_time = time.time() - match_start
-                if performance_tracker:
-                    performance_tracker.record_matching_time(match_time)
-                triggered = False
+
+            # Identify the target device from the spoken text
+            device_key, remainder = assistant.detect_device(spoken)
+
+            if device_key is None:
+                print("⚠️  No device name detected. Start with a device name "
+                      "(e.g. 'tv ...' or 'clem ...').\n")
+                continue
+
+            device = DEVICES[device_key]
+            print(f"✅ Device detected: {device['name']} (prefix '{device['prefix']}')")
+
+            if not remainder:
+                print(f"⏱️  Waiting for a command after '{device['name']}'...\n")
+                continue
+
+            print(f"📝 Processing command: \"{remainder}\"")
+            match_start = time.time()
+            result = assistant.matchers[device_key].match(remainder)
+            match_time = time.time() - match_start
+            if performance_tracker:
+                performance_tracker.record_matching_time(match_time)
 
             total_time = time.time() - stats_start
             if performance_tracker:
                 performance_tracker.record_processing_time(total_time)
                 performance_tracker.command_attempted(result["command"] is not None)
-            
-            print_result(result, show_performance=show_performance)
+
+            print_result(device["name"], result, show_performance=show_performance)
 
         except KeyboardInterrupt:
             print("\n\n[Assistant] Session ended. Goodbye! 👋\n")
-            
+
             if performance_tracker:
                 print_performance_stats(performance_tracker)
-            
+
             sys.exit(0)
 
 # ─────────────────────────────────────────────
@@ -653,7 +825,7 @@ def run(language="en-US", show_performance=False):
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="TV Voice Assistant - Enhanced with Performance Monitoring"
+        description="Multi-Device Voice Assistant (TV + Air Conditioner)"
     )
     parser.add_argument(
         "--lang", default="en-US",
@@ -664,6 +836,6 @@ if __name__ == "__main__":
         "--performance", action="store_true",
         help="Enable performance monitoring and statistics"
     )
-    
+
     args = parser.parse_args()
     run(language=args.lang, show_performance=args.performance)
