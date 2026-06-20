@@ -2,19 +2,21 @@
 MULTI-DEVICE VOICE ASSISTANT - ENHANCED VERSION
 ================================================
 Controls TV (LG) and Air Conditioner (Midea) by voice.
+Sends raw hardware command over USB serial (e.g. ac_25, tv_v+).
 
 Command format:  <device name> + <command>
-  • "tv  <command>"   → TV          → output "11" + hardware_code  (e.g. 11tv_v+)
-  • "clem <command>"  → AC (Clim)   → output "00" + hardware_code  (e.g. 00ac_25)
+  • "tv  <command>"   → sends  tv_v+   via serial
+  • "clem <command>"  → sends  ac_25   via serial
 
-Temperature shortcut:  "clem 25" → 00ac_25
+Temperature shortcut:  "clem 25" → ac_25
 
 Languages: English · French · Arabic Algerian Darija
 
 Usage:
-    python tv_voice_assistant_enhanced.py
-    python tv_voice_assistant_enhanced.py --lang ar-DZ
-    python tv_voice_assistant_enhanced.py --performance
+    python tv_voice_assistant_enhanced.py --port /dev/cu.usbserial-XXX
+    python tv_voice_assistant_enhanced.py --port /dev/cu.usbserial-XXX --baud 115200
+    python tv_voice_assistant_enhanced.py --port /dev/cu.usbserial-XXX --lang ar-DZ
+    python tv_voice_assistant_enhanced.py  (no serial — prints to screen only)
 """
 
 import speech_recognition as sr
@@ -24,6 +26,12 @@ import argparse
 import sys
 import time
 from collections import defaultdict
+
+try:
+    import serial as pyserial
+    SERIAL_AVAILABLE = True
+except ImportError:
+    SERIAL_AVAILABLE = False
 
 # ─────────────────────────────────────────────
 #  PERFORMANCE TRACKER
@@ -853,7 +861,34 @@ def listen_and_recognize(recognizer, language, tracker=None):
 # ─────────────────────────────────────────────
 #  DISPLAY
 # ─────────────────────────────────────────────
-def print_header():
+def open_serial(port, baud):
+    """Open serial port. Returns serial object or None if unavailable."""
+    if not port:
+        return None
+    if not SERIAL_AVAILABLE:
+        print("[Serial] pyserial not installed — run: pip install pyserial")
+        return None
+    try:
+        conn = pyserial.Serial(port, baud, timeout=1)
+        time.sleep(2)  # wait for device to reset after connection
+        print(f"[Serial] Connected: {port} @ {baud} baud")
+        return conn
+    except Exception as e:
+        print(f"[Serial] Could not open {port}: {e}")
+        return None
+
+def send_serial(conn, code):
+    """Send command code over serial with newline terminator."""
+    if conn is None:
+        return
+    try:
+        conn.write((code + "\n").encode("utf-8"))
+        conn.flush()
+        print(f"[Serial] Sent -> {code}")
+    except Exception as e:
+        print(f"[Serial] Send error: {e}")
+
+def print_header(serial_port=None, baud=9600):
     print("\n" + "="*62)
     print("   MULTI-DEVICE VOICE ASSISTANT")
     print("="*62)
@@ -861,7 +896,11 @@ def print_header():
     print("  AC  -> 'clem power on'  'clem cool'  'clem 25'  'clem fan low'")
     print("-"*62)
     for k, d in DEVICES.items():
-        print(f"  {d['name']:<22} prefix '{d['prefix']}' · {len(d['commands'])} commands")
+        print(f"  {d['name']:<22} {len(d['commands'])} commands")
+    if serial_port:
+        print(f"  Serial port : {serial_port} @ {baud} baud")
+    else:
+        print("  Serial port : NOT connected (screen only)")
     print("="*62)
     print("  Press Ctrl+C to quit\n")
 
@@ -871,7 +910,7 @@ def print_result(device_name, result, show_performance=False):
         print(f"  Heard      : {result['input']}")
         print(f"  Device     : {device_name}")
         print(f"  Command    : {result['command']}")
-        print(f"  OUTPUT     : {result['full_code']}")
+        print(f"  Serial OUT : {result['code']}")
         print(f"  Method     : {result['method']}")
         print(f"  Confidence : {result['confidence']*100:.1f}%")
         print(f"  Action     : {result['description']}")
@@ -897,9 +936,10 @@ def print_performance_stats(tracker):
 # ─────────────────────────────────────────────
 #  MAIN LOOP
 # ─────────────────────────────────────────────
-def run(language="en-US", show_performance=False):
-    print_header()
+def run(language="en-US", show_performance=False, serial_port=None, baud=9600):
+    print_header(serial_port, baud)
 
+    conn       = open_serial(serial_port, baud)
     assistant  = MultiDeviceAssistant(DEVICES)
     recognizer = sr.Recognizer()
     recognizer.energy_threshold         = 300
@@ -933,7 +973,7 @@ def run(language="en-US", show_performance=False):
                 continue
 
             dev = DEVICES[device_key]
-            print(f"Device: {dev['name']}  (prefix '{dev['prefix']}')")
+            print(f"Device: {dev['name']}")
 
             if not remainder:
                 print(f"No command after '{dev['name']}' — speak again.\n")
@@ -948,12 +988,18 @@ def run(language="en-US", show_performance=False):
                 tracker.record_processing_time(time.time() - t_start)
                 tracker.command_attempted(result["command"] is not None)
 
+            # Send raw hardware code over serial (no prefix)
+            if result and result["code"]:
+                send_serial(conn, result["code"])
+
             print_result(dev["name"], result, show_performance)
 
         except KeyboardInterrupt:
             print("\n\nSession ended. Goodbye!\n")
             if tracker:
                 print_performance_stats(tracker)
+            if conn:
+                conn.close()
             sys.exit(0)
 
 # ─────────────────────────────────────────────
@@ -964,7 +1010,12 @@ if __name__ == "__main__":
     parser.add_argument("--lang", default="en-US",
                         choices=["en-US", "fr-FR", "ar-DZ"],
                         help="Speech language (default: en-US)")
+    parser.add_argument("--port", default=None,
+                        help="Serial port (e.g. /dev/cu.usbserial-110)")
+    parser.add_argument("--baud", default=9600, type=int,
+                        help="Serial baud rate (default: 9600)")
     parser.add_argument("--performance", action="store_true",
                         help="Show timing stats")
     args = parser.parse_args()
-    run(language=args.lang, show_performance=args.performance)
+    run(language=args.lang, show_performance=args.performance,
+        serial_port=args.port, baud=args.baud)
