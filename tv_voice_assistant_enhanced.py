@@ -888,7 +888,7 @@ def send_serial(conn, code):
     except Exception as e:
         print(f"[Serial] Send error: {e}")
 
-def print_header(serial_port=None, baud=9600):
+def print_header(serial_port=None, baud=115200):
     print("\n" + "="*62)
     print("   MULTI-DEVICE VOICE ASSISTANT")
     print("="*62)
@@ -936,7 +936,7 @@ def print_performance_stats(tracker):
 # ─────────────────────────────────────────────
 #  MAIN LOOP
 # ─────────────────────────────────────────────
-def run(language="en-US", show_performance=False, serial_port=None, baud=9600):
+def run(language="en-US", show_performance=False, serial_port=None, baud=115200):
     print_header(serial_port, baud)
 
     conn       = open_serial(serial_port, baud)
@@ -1012,8 +1012,8 @@ if __name__ == "__main__":
                         help="Speech language (default: en-US)")
     parser.add_argument("--port", default=None,
                         help="Serial port (e.g. /dev/cu.usbserial-110)")
-    parser.add_argument("--baud", default=9600, type=int,
-                        help="Serial baud rate (default: 9600)")
+    parser.add_argument("--baud", default=115200, type=int,
+                        help="Serial baud rate (default: 115200)")
     parser.add_argument("--performance", action="store_true",
                         help="Show timing stats")
     args = parser.parse_args()
